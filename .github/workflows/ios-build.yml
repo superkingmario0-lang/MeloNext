@@ -21,18 +21,23 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      - name: Show toolchain
+      - name: Show toolchain and available simulators
         run: |
+          set -euo pipefail
           xcodebuild -version
           xcode-select -p
+          echo '--- Available iOS Simulator runtimes ---'
+          xcrun simctl list runtimes | grep -E 'iOS|iPadOS' || true
+          echo '--- Available iOS Simulator devices ---'
+          xcrun simctl list devices available || true
 
       - name: Find Xcode project
         id: project
         shell: bash
         run: |
           set -euo pipefail
-          project=$(find . -maxdepth 5 -name '*.xcodeproj' -print -quit)
-          workspace=$(find . -maxdepth 5 -name '*.xcworkspace' -print -quit)
+          project=$(find . -maxdepth 6 -name '*.xcodeproj' -print -quit)
+          workspace=$(find . -maxdepth 6 -name '*.xcworkspace' -print -quit)
           if [[ -n "$workspace" ]]; then
             echo "workspace=$workspace" >> "$GITHUB_OUTPUT"
             echo "Using workspace: $workspace"
@@ -44,11 +49,25 @@ jobs:
             exit 1
           fi
 
-      - name: Build for iOS Simulator
+      - name: Show MeloNX schemes and destinations
         shell: bash
         run: |
           set -euo pipefail
-          destination='platform=iOS Simulator,name=iPhone 16,OS=latest'
+          if [[ -n '${{ steps.project.outputs.workspace }}' ]]; then
+            xcodebuild -workspace '${{ steps.project.outputs.workspace }}' -scheme MeloNX -showdestinations || true
+          else
+            xcodebuild -project '${{ steps.project.outputs.project }}' -scheme MeloNX -showdestinations || true
+          fi
+
+      - name: Build for an available iOS Simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Ask Xcode to choose a compatible simulator instead of assuming a
+          # particular iPhone model/runtime exists on the hosted runner.
+          destination='platform=iOS Simulator'
+
           if [[ -n '${{ steps.project.outputs.workspace }}' ]]; then
             xcodebuild \
               -workspace '${{ steps.project.outputs.workspace }}' \
