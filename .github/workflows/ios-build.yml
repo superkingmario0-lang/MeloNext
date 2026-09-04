@@ -10,7 +10,7 @@ jobs:
   build:
     name: Build MeloNext
     # The bundled XCFrameworks currently do not contain arm64-simulator slices.
-    # Use an Intel macOS runner so the simulator build can use x86_64.
+    # Use an Intel macOS runner so the simulator build uses x86_64.
     runs-on: macos-15-intel
     timeout-minutes: 60
 
@@ -93,10 +93,12 @@ jobs:
           echo "Selected x86_64 simulator: $destination_id"
 
       - name: Build for iOS Simulator
+        id: build
         shell: bash
         run: |
-          set -euo pipefail
+          set -o pipefail
           destination="id=${{ steps.destination.outputs.id }}"
+          set +e
 
           if [[ -n '${{ steps.project.outputs.workspace }}' ]]; then
             xcodebuild \
@@ -106,8 +108,9 @@ jobs:
               -configuration Debug \
               ARCHS=x86_64 \
               ONLY_ACTIVE_ARCH=YES \
+              EXCLUDED_ARCHS=arm64 \
               CODE_SIGNING_ALLOWED=NO \
-              build
+              build 2>&1 | tee xcodebuild.log
           else
             xcodebuild \
               -project '${{ steps.project.outputs.project }}' \
@@ -116,9 +119,28 @@ jobs:
               -configuration Debug \
               ARCHS=x86_64 \
               ONLY_ACTIVE_ARCH=YES \
+              EXCLUDED_ARCHS=arm64 \
               CODE_SIGNING_ALLOWED=NO \
-              build
+              build 2>&1 | tee xcodebuild.log
           fi
+
+          build_status=${PIPESTATUS[0]}
+          echo "build_status=$build_status" >> "$GITHUB_OUTPUT"
+
+          echo ''
+          echo '================ ACTUAL XCODE ERRORS ================'
+          grep -nE '(^|[[:space:]])error:|fatal error:|Command .* failed' xcodebuild.log | tail -n 100 || true
+          echo '======================================================='
+
+          exit "$build_status"
+
+      - name: Upload Xcode build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: melnext-xcodebuild-log
+          path: xcodebuild.log
+          if-no-files-found: ignore
 
       - name: Archive build logs
         if: always()
