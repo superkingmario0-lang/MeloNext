@@ -49,24 +49,53 @@ jobs:
             exit 1
           fi
 
-      - name: Show MeloNX schemes and destinations
+      - name: Select a concrete iOS Simulator destination
+        id: destination
         shell: bash
         run: |
           set -euo pipefail
+
           if [[ -n '${{ steps.project.outputs.workspace }}' ]]; then
-            xcodebuild -workspace '${{ steps.project.outputs.workspace }}' -scheme MeloNX -showdestinations || true
+            destinations=$(xcodebuild -workspace '${{ steps.project.outputs.workspace }}' -scheme MeloNX -showdestinations 2>&1)
           else
-            xcodebuild -project '${{ steps.project.outputs.project }}' -scheme MeloNX -showdestinations || true
+            destinations=$(xcodebuild -project '${{ steps.project.outputs.project }}' -scheme MeloNX -showdestinations 2>&1)
           fi
 
-      - name: Build for an available iOS Simulator
+          echo "$destinations"
+
+          # Prefer a concrete iPhone destination. The generic
+          # "platform=iOS Simulator" specifier is not accepted by this
+          # Xcode version when the scheme exposes only concrete devices.
+          destination_id=$(printf '%s\n' "$destinations" \
+            | grep 'platform:iOS Simulator' \
+            | grep 'arch:arm64' \
+            | grep -v 'placeholder' \
+            | sed -n 's/.*id:\([^,]*\),.*name:\(iPhone[^}]*\).*/\1/p' \
+            | head -n 1)
+
+          if [[ -z "$destination_id" ]]; then
+            # Fall back to any concrete iOS Simulator if an iPhone is not exposed.
+            destination_id=$(printf '%s\n' "$destinations" \
+              | grep 'platform:iOS Simulator' \
+              | grep 'arch:arm64' \
+              | grep -v 'placeholder' \
+              | sed -n 's/.*id:\([^,]*\),.*/\1/p' \
+              | head -n 1)
+          fi
+
+          if [[ -z "$destination_id" ]]; then
+            echo 'Could not find a concrete iOS Simulator destination.' >&2
+            exit 1
+          fi
+
+          echo "id=$destination_id" >> "$GITHUB_OUTPUT"
+          echo "Selected simulator destination: $destination_id"
+
+      - name: Build for iOS Simulator
         shell: bash
         run: |
           set -euo pipefail
-
-          # Ask Xcode to choose a compatible simulator instead of assuming a
-          # particular iPhone model/runtime exists on the hosted runner.
-          destination='platform=iOS Simulator'
+          destination="id=${{ steps.destination.outputs.id }}"
 
           if [[ -n '${{ steps.project.outputs.workspace }}' ]]; then
             xcodebuild \
