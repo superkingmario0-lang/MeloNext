@@ -9,7 +9,9 @@ on:
 jobs:
   build:
     name: Build MeloNext
-    runs-on: macos-15
+    # The bundled XCFrameworks currently do not contain arm64-simulator slices.
+    # Use an Intel macOS runner so the simulator build can use x86_64.
+    runs-on: macos-15-intel
     timeout-minutes: 60
 
     steps:
@@ -26,6 +28,8 @@ jobs:
           set -euo pipefail
           xcodebuild -version
           xcode-select -p
+          echo '--- Runner architecture ---'
+          uname -m
           echo '--- Available iOS Simulator runtimes ---'
           xcrun simctl list runtimes | grep -E 'iOS|iPadOS' || true
           echo '--- Available iOS Simulator devices ---'
@@ -49,7 +53,17 @@ jobs:
             exit 1
           fi
 
-      - name: Select a concrete iOS Simulator destination
+      - name: Show MeloNX schemes and destinations
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n '${{ steps.project.outputs.workspace }}' ]]; then
+            xcodebuild -workspace '${{ steps.project.outputs.workspace }}' -scheme MeloNX -showdestinations || true
+          else
+            xcodebuild -project '${{ steps.project.outputs.project }}' -scheme MeloNX -showdestinations || true
+          fi
+
+      - name: Select an x86_64 iOS Simulator
         id: destination
         shell: bash
         run: |
@@ -63,33 +77,20 @@ jobs:
 
           echo "$destinations"
 
-          # Prefer a concrete iPhone destination. The generic
-          # "platform=iOS Simulator" specifier is not accepted by this
-          # Xcode version when the scheme exposes only concrete devices.
           destination_id=$(printf '%s\n' "$destinations" \
             | grep 'platform:iOS Simulator' \
-            | grep 'arch:arm64' \
+            | grep 'arch:x86_64' \
             | grep -v 'placeholder' \
-            | sed -n 's/.*id:\([^,]*\),.*name:\(iPhone[^}]*\).*/\1/p' \
+            | sed -n 's/.*id:\([^,]*\),.*/\1/p' \
             | head -n 1)
 
           if [[ -z "$destination_id" ]]; then
-            # Fall back to any concrete iOS Simulator if an iPhone is not exposed.
-            destination_id=$(printf '%s\n' "$destinations" \
-              | grep 'platform:iOS Simulator' \
-              | grep 'arch:arm64' \
-              | grep -v 'placeholder' \
-              | sed -n 's/.*id:\([^,]*\),.*/\1/p' \
-              | head -n 1)
-          fi
-
-          if [[ -z "$destination_id" ]]; then
-            echo 'Could not find a concrete iOS Simulator destination.' >&2
+            echo 'No x86_64 iOS Simulator destination was exposed by the MeloNX scheme.' >&2
             exit 1
           fi
 
           echo "id=$destination_id" >> "$GITHUB_OUTPUT"
-          echo "Selected simulator destination: $destination_id"
+          echo "Selected x86_64 simulator: $destination_id"
 
       - name: Build for iOS Simulator
         shell: bash
@@ -103,6 +104,8 @@ jobs:
               -scheme MeloNX \
               -destination "$destination" \
               -configuration Debug \
+              ARCHS=x86_64 \
+              ONLY_ACTIVE_ARCH=YES \
               CODE_SIGNING_ALLOWED=NO \
               build
           else
@@ -111,6 +114,8 @@ jobs:
               -scheme MeloNX \
               -destination "$destination" \
               -configuration Debug \
+              ARCHS=x86_64 \
+              ONLY_ACTIVE_ARCH=YES \
               CODE_SIGNING_ALLOWED=NO \
               build
           fi
