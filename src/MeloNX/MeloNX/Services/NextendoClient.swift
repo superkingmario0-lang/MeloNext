@@ -29,7 +29,7 @@ public final class NextendoClient: ObservableObject {
     }
 
     public func restoreSession() {
-        guard let token = try? keychain.loadToken(), let token else { return }
+        guard let token = try? keychain.loadToken() else { return }
         Task {
             do {
                 let user: NextendoUser = try await request(path: "/api/me", method: "GET", token: token)
