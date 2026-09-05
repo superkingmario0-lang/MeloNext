@@ -7,6 +7,8 @@
 
 import Foundation
 
+#if arch(arm64)
+
 func handler(sig: Int32, info: UnsafeMutablePointer<siginfo_t>?, context: UnsafeMutableRawPointer?) {
     guard let context = context else { return }
     let uc = context.bindMemory(to: ucontext_t.self, capacity: 1)
@@ -24,3 +26,11 @@ func JIT26BreakpointHandler() {
     sigaction(SIGTRAP, &sa, nil)
 }
 
+#else
+
+// The x86_64 simulator does not expose the arm64 thread-state fields used by
+// the real JIT breakpoint handler. The simulator build does not need this
+// arm64-specific SIGTRAP recovery path, so keep the API as a no-op.
+func JIT26BreakpointHandler() {}
+
+#endif
