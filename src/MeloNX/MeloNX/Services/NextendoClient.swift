@@ -86,10 +86,11 @@ public final class NextendoClient: ObservableObject {
 
     private func connectRealtime() {
         guard let token = session?.accessToken else { return }
-        var components = URLComponents(url: serverURL, resolvingAgainstBaseURL: false)
-        components?.scheme = (components?.scheme == "https") ? "wss" : "ws"
-        components?.path = "/api/realtime"
-        guard let url = components?.url else { return }
+        guard var components = URLComponents(url: serverURL, resolvingAgainstBaseURL: false) else { return }
+        let scheme = components.scheme
+        components.scheme = (scheme == "https") ? "wss" : "ws"
+        components.path = "/api/realtime"
+        guard let url = components.url else { return }
 
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
