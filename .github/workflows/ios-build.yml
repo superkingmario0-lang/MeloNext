@@ -13,7 +13,7 @@ jobs:
     # Building an x86_64 simulator target cannot link them, so build the
     # actual iOS arm64 target instead.
     runs-on: macos-15
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - name: Checkout repository and Git LFS assets
@@ -35,6 +35,53 @@ jobs:
             echo 'ERROR: Git LFS pointer files are still present.' >&2
             exit 1
           fi
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install .NET iOS workload
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet --info
+          dotnet workload install ios --skip-manifest-update
+
+      - name: Build Ryujinx native iOS bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          project="src/Ryujinx.Headless.SDL2/Ryujinx.Headless.SDL2.csproj"
+          output="src/MeloNX/MeloNX/Dependencies/Dynamic Libraries/Ryujinx.Headless.SDL2.dylib"
+
+          echo '--- Publishing Ryujinx.Headless.SDL2 for ios-arm64 ---'
+          dotnet publish "$project" \
+            --configuration Release \
+            --runtime ios-arm64 \
+            --self-contained true \
+            -p:NativeLib=Shared \
+            -p:PublishAot=true
+
+          echo '--- Locating native bridge ---'
+          native=$(find "src/Ryujinx.Headless.SDL2/bin" -type f \
+            \( -name 'Ryujinx.Headless.SDL2.dylib' -o -name 'Ryujinx.Headless.SDL2' \) \
+            -print -quit)
+          if [[ -z "$native" ]]; then
+            echo 'ERROR: Native Ryujinx.Headless.SDL2 binary was not produced.' >&2
+            find "src/Ryujinx.Headless.SDL2/bin" -maxdepth 8 -type f -print | head -n 200 || true
+            exit 1
+          fi
+
+          mkdir -p "$(dirname "$output")"
+          cp "$native" "$output"
+
+          echo '--- Native bridge verification ---'
+          file "$native"
+          xcrun lipo -info "$native"
+          file "$output"
+          xcrun lipo -info "$output"
+          test -s "$output"
 
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
