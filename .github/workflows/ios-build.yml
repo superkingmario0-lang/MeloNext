@@ -16,8 +16,25 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      - name: Checkout
+      - name: Checkout repository and Git LFS assets
         uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Verify native dependency files
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '--- Git LFS status ---'
+          git lfs status || true
+          echo '--- Native dependency file types ---'
+          file "src/MeloNX/MeloNX/Dependencies/Dynamic Libraries/"*.dylib
+          if grep -RIl '^version https://git-lfs.github.com/spec/v1$' \
+            "src/MeloNX/MeloNX/Dependencies/Dynamic Libraries" \
+            "src/MeloNX/MeloNX/Dependencies/XCFrameworks"; then
+            echo 'ERROR: Git LFS pointer files are still present.' >&2
+            exit 1
+          fi
 
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
