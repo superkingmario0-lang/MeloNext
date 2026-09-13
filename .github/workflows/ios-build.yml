@@ -9,9 +9,10 @@ on:
 jobs:
   build:
     name: Build MeloNext
-    # The bundled XCFrameworks currently do not contain arm64-simulator slices.
-    # Use an Intel macOS runner so the simulator build uses x86_64.
-    runs-on: macos-15-intel
+    # The bundled native frameworks/libraries are device-arm64 builds.
+    # Building an x86_64 simulator target cannot link them, so build the
+    # actual iOS arm64 target instead.
+    runs-on: macos-15
     timeout-minutes: 60
 
     steps:
@@ -23,17 +24,15 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      - name: Show toolchain and available simulators
+      - name: Show toolchain
         run: |
           set -euo pipefail
           xcodebuild -version
           xcode-select -p
           echo '--- Runner architecture ---'
           uname -m
-          echo '--- Available iOS Simulator runtimes ---'
-          xcrun simctl list runtimes | grep -E 'iOS|iPadOS' || true
-          echo '--- Available iOS Simulator devices ---'
-          xcrun simctl list devices available || true
+          echo '--- iOS SDK ---'
+          xcrun --sdk iphoneos --show-sdk-version
 
       - name: Find Xcode project
         id: project
@@ -53,7 +52,7 @@ jobs:
             exit 1
           fi
 
-      - name: Show MeloNX schemes and destinations
+      - name: Show MeloNX schemes and device destinations
         shell: bash
         run: |
           set -euo pipefail
@@ -63,64 +62,36 @@ jobs:
             xcodebuild -project '${{ steps.project.outputs.project }}' -scheme MeloNX -showdestinations || true
           fi
 
-      - name: Select an x86_64 iOS Simulator
-        id: destination
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [[ -n '${{ steps.project.outputs.workspace }}' ]]; then
-            destinations=$(xcodebuild -workspace '${{ steps.project.outputs.workspace }}' -scheme MeloNX -showdestinations 2>&1)
-          else
-            destinations=$(xcodebuild -project '${{ steps.project.outputs.project }}' -scheme MeloNX -showdestinations 2>&1)
-          fi
-
-          echo "$destinations"
-
-          destination_id=$(printf '%s\n' "$destinations" \
-            | grep 'platform:iOS Simulator' \
-            | grep 'arch:x86_64' \
-            | grep -v 'placeholder' \
-            | sed -n 's/.*id:\([^,]*\),.*/\1/p' \
-            | head -n 1)
-
-          if [[ -z "$destination_id" ]]; then
-            echo 'No x86_64 iOS Simulator destination was exposed by the MeloNX scheme.' >&2
-            exit 1
-          fi
-
-          echo "id=$destination_id" >> "$GITHUB_OUTPUT"
-          echo "Selected x86_64 simulator: $destination_id"
-
-      - name: Build for iOS Simulator
+      - name: Build for iOS device (arm64)
         id: build
         shell: bash
         run: |
           set -o pipefail
-          destination="id=${{ steps.destination.outputs.id }}"
           set +e
 
           if [[ -n '${{ steps.project.outputs.workspace }}' ]]; then
             xcodebuild \
               -workspace '${{ steps.project.outputs.workspace }}' \
               -scheme MeloNX \
-              -destination "$destination" \
+              -destination 'generic/platform=iOS' \
               -configuration Debug \
-              ARCHS=x86_64 \
+              SDKROOT=iphoneos \
+              ARCHS=arm64 \
               ONLY_ACTIVE_ARCH=YES \
-              EXCLUDED_ARCHS=arm64 \
               CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
               build 2>&1 | tee xcodebuild.log
           else
             xcodebuild \
               -project '${{ steps.project.outputs.project }}' \
               -scheme MeloNX \
-              -destination "$destination" \
+              -destination 'generic/platform=iOS' \
               -configuration Debug \
-              ARCHS=x86_64 \
+              SDKROOT=iphoneos \
+              ARCHS=arm64 \
               ONLY_ACTIVE_ARCH=YES \
-              EXCLUDED_ARCHS=arm64 \
               CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
               build 2>&1 | tee xcodebuild.log
           fi
 
@@ -133,6 +104,28 @@ jobs:
           echo '======================================================='
 
           exit "$build_status"
+
+      - name: Locate built app
+        if: steps.build.outputs.build_status == '0'
+        id: app
+        shell: bash
+        run: |
+          set -euo pipefail
+          app=$(find ~/Library/Developer/Xcode/DerivedData -type d -path '*/Build/Products/Debug-iphoneos/MeloNX.app' -print -quit)
+          if [[ -z "$app" ]]; then
+            echo 'MeloNX.app was not produced.' >&2
+            exit 1
+          fi
+          echo "app=$app" >> "$GITHUB_OUTPUT"
+          echo "Built app: $app"
+
+      - name: Upload unsigned iOS app
+        if: steps.build.outputs.build_status == '0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: MeloNext-unsigned-iOS-app
+          path: ${{ steps.app.outputs.app }}
+          if-no-files-found: error
 
       - name: Upload Xcode build log
         if: always()
