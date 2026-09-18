@@ -8,12 +8,9 @@ on:
 
 jobs:
   build:
-    name: Build MeloNext
-    # The bundled native frameworks/libraries are device-arm64 builds.
-    # Building an x86_64 simulator target cannot link them, so build the
-    # actual iOS arm64 target instead.
-    runs-on: macos-15
-    timeout-minutes: 90
+    name: Build MeloNext iOS 27
+    runs-on: xcode-27
+    timeout-minutes: 120
 
     steps:
       - name: Checkout repository and Git LFS assets
@@ -21,18 +18,31 @@ jobs:
         with:
           lfs: true
 
+      - name: Select Xcode 27
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '27.0'
+
+      - name: Show Xcode 27 toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcode-select -p
+          echo "--- Runner architecture ---"
+          uname -m
+          echo "--- iOS SDK ---"
+          xcrun --sdk iphoneos --show-sdk-version
+
       - name: Verify native dependency files
         shell: bash
         run: |
           set -euo pipefail
-          echo '--- Git LFS status ---'
+          echo "--- Git LFS status ---"
           git lfs status || true
-          echo '--- Native dependency file types ---'
           file "src/MeloNX/MeloNX/Dependencies/Dynamic Libraries/"*.dylib
-          if grep -RIl '^version https://git-lfs.github.com/spec/v1$' \
-            "src/MeloNX/MeloNX/Dependencies/Dynamic Libraries" \
-            "src/MeloNX/MeloNX/Dependencies/XCFrameworks"; then
-            echo 'ERROR: Git LFS pointer files are still present.' >&2
+          if grep -RIl '^version https://git-lfs.github.com/spec/v1$'             "src/MeloNX/MeloNX/Dependencies/Dynamic Libraries"             "src/MeloNX/MeloNX/Dependencies/XCFrameworks"; then
+            echo "ERROR: Git LFS pointer files are still present." >&2
             exit 1
           fi
 
@@ -55,20 +65,12 @@ jobs:
           project="src/Ryujinx.Headless.SDL2/Ryujinx.Headless.SDL2.csproj"
           output="src/MeloNX/MeloNX/Dependencies/Dynamic Libraries/Ryujinx.Headless.SDL2.dylib"
 
-          echo '--- Publishing Ryujinx.Headless.SDL2 for ios-arm64 ---'
-          dotnet publish "$project" \
-            --configuration Release \
-            --runtime ios-arm64 \
-            --self-contained true \
-            -p:NativeLib=Shared \
-            -p:PublishAot=true
+          dotnet publish "$project"             --configuration Release             --runtime ios-arm64             --self-contained true             -p:NativeLib=Shared             -p:PublishAot=true
 
-          echo '--- Locating native bridge ---'
-          native=$(find "src/Ryujinx.Headless.SDL2/bin" -type f \
-            \( -name 'Ryujinx.Headless.SDL2.dylib' -o -name 'Ryujinx.Headless.SDL2' \) \
-            -print -quit)
+          native=$(find "src/Ryujinx.Headless.SDL2/bin" -type f             \( -name 'Ryujinx.Headless.SDL2.dylib' -o -name 'Ryujinx.Headless.SDL2' \)             -print -quit)
+
           if [[ -z "$native" ]]; then
-            echo 'ERROR: Native Ryujinx.Headless.SDL2 binary was not produced.' >&2
+            echo "ERROR: Native Ryujinx.Headless.SDL2 binary was not produced." >&2
             find "src/Ryujinx.Headless.SDL2/bin" -maxdepth 8 -type f -print | head -n 200 || true
             exit 1
           fi
@@ -76,27 +78,11 @@ jobs:
           mkdir -p "$(dirname "$output")"
           cp "$native" "$output"
 
-          echo '--- Native bridge verification ---'
           file "$native"
           xcrun lipo -info "$native"
           file "$output"
           xcrun lipo -info "$output"
           test -s "$output"
-
-      - name: Select Xcode
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: latest-stable
-
-      - name: Show toolchain
-        run: |
-          set -euo pipefail
-          xcodebuild -version
-          xcode-select -p
-          echo '--- Runner architecture ---'
-          uname -m
-          echo '--- iOS SDK ---'
-          xcrun --sdk iphoneos --show-sdk-version
 
       - name: Find Xcode project
         id: project
@@ -112,7 +98,7 @@ jobs:
             echo "project=$project" >> "$GITHUB_OUTPUT"
             echo "Using project: $project"
           else
-            echo 'No Xcode project or workspace found.' >&2
+            echo "No Xcode project or workspace found." >&2
             exit 1
           fi
 
@@ -126,46 +112,42 @@ jobs:
             xcodebuild -project '${{ steps.project.outputs.project }}' -scheme MeloNX -showdestinations || true
           fi
 
-      - name: Build for iOS device (arm64)
+      - name: Build Release for iOS 27 device (arm64)
         id: build
         shell: bash
         run: |
           set -o pipefail
           set +e
 
+          COMMON_ARGS=(
+            -scheme MeloNX
+            -destination 'generic/platform=iOS'
+            -configuration Release
+            SDKROOT=iphoneos
+            IPHONEOS_DEPLOYMENT_TARGET=17.0
+            ARCHS=arm64
+            ONLY_ACTIVE_ARCH=YES
+            DEAD_CODE_STRIPPING=YES
+            SWIFT_OPTIMIZATION_LEVEL=-O
+            GCC_OPTIMIZATION_LEVEL=s
+            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_REQUIRED=NO
+          )
+
           if [[ -n '${{ steps.project.outputs.workspace }}' ]]; then
-            xcodebuild \
-              -workspace '${{ steps.project.outputs.workspace }}' \
-              -scheme MeloNX \
-              -destination 'generic/platform=iOS' \
-              -configuration Debug \
-              SDKROOT=iphoneos \
-              ARCHS=arm64 \
-              ONLY_ACTIVE_ARCH=YES \
-              CODE_SIGNING_ALLOWED=NO \
-              CODE_SIGNING_REQUIRED=NO \
-              build 2>&1 | tee xcodebuild.log
+            xcodebuild -workspace '${{ steps.project.outputs.workspace }}' \
+              "${COMMON_ARGS[@]}" build 2>&1 | tee xcodebuild.log
           else
-            xcodebuild \
-              -project '${{ steps.project.outputs.project }}' \
-              -scheme MeloNX \
-              -destination 'generic/platform=iOS' \
-              -configuration Debug \
-              SDKROOT=iphoneos \
-              ARCHS=arm64 \
-              ONLY_ACTIVE_ARCH=YES \
-              CODE_SIGNING_ALLOWED=NO \
-              CODE_SIGNING_REQUIRED=NO \
-              build 2>&1 | tee xcodebuild.log
+            xcodebuild -project '${{ steps.project.outputs.project }}' \
+              "${COMMON_ARGS[@]}" build 2>&1 | tee xcodebuild.log
           fi
 
           build_status=${PIPESTATUS[0]}
           echo "build_status=$build_status" >> "$GITHUB_OUTPUT"
 
-          echo ''
-          echo '================ ACTUAL XCODE ERRORS ================'
-          grep -nE '(^|[[:space:]])error:|fatal error:|Command .* failed' xcodebuild.log | tail -n 100 || true
-          echo '======================================================='
+          echo "================ ACTUAL XCODE ERRORS ================"
+          grep -nE '(^|[[:space:]])error:|fatal error:|Command .* failed|Undefined symbols'             xcodebuild.log | tail -n 150 || true
+          echo "======================================================"
 
           exit "$build_status"
 
@@ -175,19 +157,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          app=$(find ~/Library/Developer/Xcode/DerivedData -type d -path '*/Build/Products/Debug-iphoneos/MeloNX.app' -print -quit)
+          app=$(find ~/Library/Developer/Xcode/DerivedData             -type d -path '*/Build/Products/Release-iphoneos/MeloNX.app'             -print -quit)
           if [[ -z "$app" ]]; then
-            echo 'MeloNX.app was not produced.' >&2
+            echo "MeloNX.app was not produced." >&2
             exit 1
           fi
           echo "app=$app" >> "$GITHUB_OUTPUT"
           echo "Built app: $app"
 
-      - name: Upload unsigned iOS app
+      - name: Upload unsigned iOS 27 app
         if: steps.build.outputs.build_status == '0'
         uses: actions/upload-artifact@v4
         with:
-          name: MeloNext-unsigned-iOS-app
+          name: MeloNext-iOS-27-unsigned-app
           path: ${{ steps.app.outputs.app }}
           if-no-files-found: error
 
