@@ -96,10 +96,10 @@ public final class NextendoClient: NSObject, ObservableObject, ASWebAuthenticati
         let verifier = Self.randomURLSafeString(byteCount: 32)
         let challenge = Self.codeChallenge(verifier)
 
-        // The current Nextendo first-party emulator client accepts any loopback
-        // port. PKCE protects the short-lived authorization code.
-        let port = Self.randomLoopbackPort()
-        let redirectURI = "http://127.0.0.1:\(port)/oauth2redirect/melonext"
+        // iOS uses a private-use callback registered to this app. The public
+        // client must have this exact redirect URI registered in Nextendo.
+        // PKCE protects the short-lived authorization code.
+        let redirectURI = Self.oauthRedirectURI
 
         var components = URLComponents(
             url: serverURL.appendingPathComponent("api/oauth/authorize"),
