@@ -61,7 +61,7 @@ public final class NextendoClient: NSObject, ObservableObject, ASWebAuthenticati
     }
 
     public func restoreSession() {
-        guard let token = try? keychain.loadToken(), let token, !token.isEmpty else {
+        guard let token = try? keychain.loadToken(), !token.isEmpty else {
             return
         }
 
