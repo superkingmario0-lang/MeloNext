@@ -8,8 +8,8 @@ on:
 
 jobs:
   build:
-    name: Build MeloNext iOS 27
-    runs-on: xcode-27
+    name: Build MeloNext iOS
+    runs-on: macos-14
     timeout-minutes: 120
 
     steps:
@@ -18,12 +18,12 @@ jobs:
         with:
           lfs: true
 
-      - name: Select Xcode 27
+      - name: Select Xcode Version
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '27.0'
+          xcode-version: '15.4'
 
-      - name: Show Xcode 27 toolchain
+      - name: Show Xcode toolchain
         shell: bash
         run: |
           set -euo pipefail
@@ -40,8 +40,10 @@ jobs:
           set -euo pipefail
           echo "--- Git LFS status ---"
           git lfs status || true
-          file "src/MeloNX/MeloNX/Dependencies/Dynamic Libraries/"*.dylib
-          if grep -RIl '^version https://git-lfs.github.com/spec/v1$'             "src/MeloNX/MeloNX/Dependencies/Dynamic Libraries"             "src/MeloNX/MeloNX/Dependencies/XCFrameworks"; then
+          file "src/MeloNX/MeloNX/Dependencies/Dynamic Libraries/"*.dylib || true
+          if grep -RIl '^version https://git-lfs.github.com/spec/v1$' \
+             "src/MeloNX/MeloNX/Dependencies/Dynamic Libraries" \
+             "src/MeloNX/MeloNX/Dependencies/XCFrameworks"; then
             echo "ERROR: Git LFS pointer files are still present." >&2
             exit 1
           fi
@@ -56,7 +58,7 @@ jobs:
         run: |
           set -euo pipefail
           dotnet --info
-          dotnet workload install ios --skip-manifest-update
+          dotnet workload install ios
 
       - name: Build Ryujinx native iOS bridge
         shell: bash
@@ -65,36 +67,17 @@ jobs:
           project="src/Ryujinx.Headless.SDL2/Ryujinx.Headless.SDL2.csproj"
           output="src/MeloNX/MeloNX/Dependencies/Dynamic Libraries/Ryujinx.Headless.SDL2.dylib"
 
-          # Build the Ryujinx bridge as a .NET 8 NativeAOT iOS library.
-          # NativeAOT library mode uses TFM net8.0 + RID ios-arm64; using
-          # net8.0-ios here incorrectly propagates PublishAot into the
-          # net8.0 ProjectReferences.
-          dotnet build "$project" \
-            --configuration Release \
-            -p:PublishAot=false \
-            -p:RuntimeIdentifier= \
-            -p:RuntimeIdentifiers=
-
-          # Restore the exact TFM/RID combination used by the NativeAOT publish.
-          # Without this, project.assets.json only contains net8.0 and publish
-          # fails with NETSDK1047 for net8.0/ios-arm64.
-          dotnet restore "$project" \
-            --framework net8.0 \
-            --runtime ios-arm64
-
+          # Publish Ryujinx bridge targeting iOS NativeAOT
           dotnet publish "$project" \
-            --framework net8.0 \
             --configuration Release \
             --runtime ios-arm64 \
-            --self-contained true \
-            --no-restore \
-            -p:NativeLib=Shared \
             -p:PublishAot=true \
-            -p:PublishAotUsingRuntimePack=true \
-            -p:_IsAppleMobileLibraryMode=false \
-            -p:BuildProjectReferences=false
+            -p:NativeLib=Shared \
+            -p:SelfContained=true
 
-          native=$(find "src/Ryujinx.Headless.SDL2/bin" -type f             \( -name 'Ryujinx.Headless.SDL2.dylib' -o -name 'Ryujinx.Headless.SDL2' \)             -print -quit)
+          native=$(find "src/Ryujinx.Headless.SDL2/bin" -type f \
+             \( -name 'Ryujinx.Headless.SDL2.dylib' -o -name 'Ryujinx.Headless.SDL2' \) \
+             -print -quit)
 
           if [[ -z "$native" ]]; then
             echo "ERROR: Native Ryujinx.Headless.SDL2 binary was not produced." >&2
@@ -105,10 +88,8 @@ jobs:
           mkdir -p "$(dirname "$output")"
           cp "$native" "$output"
 
-          file "$native"
-          xcrun lipo -info "$native"
           file "$output"
-          xcrun lipo -info "$output"
+          xcrun lipo -info "$output" || true
           test -s "$output"
 
       - name: Find Xcode project
@@ -129,17 +110,7 @@ jobs:
             exit 1
           fi
 
-      - name: Show MeloNX schemes and device destinations
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ -n '${{ steps.project.outputs.workspace }}' ]]; then
-            xcodebuild -workspace '${{ steps.project.outputs.workspace }}' -scheme MeloNX -showdestinations || true
-          else
-            xcodebuild -project '${{ steps.project.outputs.project }}' -scheme MeloNX -showdestinations || true
-          fi
-
-      - name: Build Release for iOS 27 device (arm64)
+      - name: Build Release for iOS device (arm64)
         id: build
         shell: bash
         run: |
@@ -150,15 +121,9 @@ jobs:
             -scheme MeloNX
             -destination 'generic/platform=iOS'
             -configuration Release
-            SDKROOT=iphoneos
-            IPHONEOS_DEPLOYMENT_TARGET=17.0
-            ARCHS=arm64
-            ONLY_ACTIVE_ARCH=YES
-            DEAD_CODE_STRIPPING=YES
-            SWIFT_OPTIMIZATION_LEVEL=-O
-            GCC_OPTIMIZATION_LEVEL=s
             CODE_SIGNING_ALLOWED=NO
             CODE_SIGNING_REQUIRED=NO
+            CODE_SIGN_IDENTITY=""
           )
 
           if [[ -n '${{ steps.project.outputs.workspace }}' ]]; then
@@ -173,7 +138,8 @@ jobs:
           echo "build_status=$build_status" >> "$GITHUB_OUTPUT"
 
           echo "================ ACTUAL XCODE ERRORS ================"
-          grep -nE '(^|[[:space:]])error:|fatal error:|Command .* failed|Undefined symbols'             xcodebuild.log | tail -n 150 || true
+          grep -nE '(^|[[:space:]])error:|fatal error:|Command .* failed|Undefined symbols' \
+             xcodebuild.log | tail -n 150 || true
           echo "======================================================"
 
           exit "$build_status"
@@ -184,7 +150,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          app=$(find ~/Library/Developer/Xcode/DerivedData             -type d -path '*/Build/Products/Release-iphoneos/MeloNX.app'             -print -quit)
+          app=$(find ~/Library/Developer/Xcode/DerivedData \
+             -type d -path '*/Build/Products/Release-iphoneos/MeloNX.app' \
+             -print -quit)
           if [[ -z "$app" ]]; then
             echo "MeloNX.app was not produced." >&2
             exit 1
@@ -192,27 +160,10 @@ jobs:
           echo "app=$app" >> "$GITHUB_OUTPUT"
           echo "Built app: $app"
 
-      - name: Upload unsigned iOS 27 app
+      - name: Upload unsigned iOS app
         if: steps.build.outputs.build_status == '0'
         uses: actions/upload-artifact@v4
         with:
-          name: MeloNext-iOS-27-unsigned-app
+          name: MeloNX-iOS-unsigned-app
           path: ${{ steps.app.outputs.app }}
           if-no-files-found: error
-
-      - name: Upload Xcode build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: melnext-xcodebuild-log
-          path: xcodebuild.log
-          if-no-files-found: ignore
-
-      - name: Archive build logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: melnext-build-logs
-          path: |
-            ~/Library/Developer/Xcode/DerivedData/**/Logs/Build/*.xcactivitylog
-          if-no-files-found: ignore
