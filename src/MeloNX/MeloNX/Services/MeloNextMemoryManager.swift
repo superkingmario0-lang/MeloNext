@@ -1,10 +1,12 @@
 import Foundation
 import UIKit
+import os
 
-/// Adaptive memory policy for MeloNext on iOS/iPadOS.
+/// Adaptive low-memory policy for MeloNext on iOS/iPadOS.
 ///
-/// The profiles are targets for cache and workload tuning; they are not hard
-/// allocations or guarantees about how much memory iOS will permit the app to use.
+/// iOS exposes the amount of memory still available to the current process.
+/// We use that signal to tell cache owners when to purge rather than trying
+/// to allocate up to a guessed device limit.
 public final class MeloNextMemoryManager {
     public enum Profile: String, CaseIterable, Identifiable {
         case automatic
@@ -20,21 +22,21 @@ public final class MeloNextMemoryManager {
         public let aggressiveCleanup: Bool
 
         public static let automatic = Policy(
-            cacheBudgetMB: 768,
-            shaderCacheBudgetMB: 384,
-            aggressiveCleanup: false
+            cacheBudgetMB: 384,
+            shaderCacheBudgetMB: 128,
+            aggressiveCleanup: true
         )
 
         public static let eightGB = Policy(
-            cacheBudgetMB: 512,
-            shaderCacheBudgetMB: 256,
+            cacheBudgetMB: 320,
+            shaderCacheBudgetMB: 96,
             aggressiveCleanup: true
         )
 
         public static let twelveGB = Policy(
-            cacheBudgetMB: 1024,
-            shaderCacheBudgetMB: 512,
-            aggressiveCleanup: false
+            cacheBudgetMB: 512,
+            shaderCacheBudgetMB: 192,
+            aggressiveCleanup: true
         )
     }
 
@@ -42,32 +44,61 @@ public final class MeloNextMemoryManager {
 
     public private(set) var profile: Profile = .automatic
     public private(set) var currentPolicy: Policy = .automatic
+    public private(set) var availableMemoryBytes: UInt64 = 0
+
+    private var monitorTimer: Timer?
 
     private init() {
         apply(profile: .automatic)
+
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleMemoryWarning),
             name: UIApplication.didReceiveMemoryWarningNotification,
             object: nil
         )
+
+        monitorTimer = Timer.scheduledTimer(
+            withTimeInterval: 5,
+            repeats: true
+        ) { [weak self] _ in
+            self?.sampleAvailableMemory()
+        }
+
+        sampleAvailableMemory()
     }
 
     deinit {
+        monitorTimer?.invalidate()
         NotificationCenter.default.removeObserver(self)
+    }
+
+    public var physicalMemoryGB: Double {
+        Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824.0
+    }
+
+    /// Advisory bytes remaining before the current app memory limit.
+    public func sampleAvailableMemory() -> UInt64 {
+        let value = UInt64(os_proc_available_memory())
+        availableMemoryBytes = value
+
+        if value > 0 && value < 512 * 1024 * 1024 {
+            handleMemoryPressure(.warning)
+        }
+
+        return value
     }
 
     public func apply(profile: Profile) {
         self.profile = profile
         self.currentPolicy = policy(for: profile)
+        sampleAvailableMemory()
     }
 
     public func policy(for profile: Profile) -> Policy {
         switch profile {
         case .automatic:
-            // Prefer a conservative policy. iOS memory limits vary by device
-            // and OS version, so hardware RAM is not treated as an app quota.
-            return .automatic
+            return physicalMemoryGB <= 8 ? .eightGB : .twelveGB
         case .eightGB:
             return .eightGB
         case .twelveGB:
@@ -75,24 +106,29 @@ public final class MeloNextMemoryManager {
         }
     }
 
-    /// Call from cache owners when memory pressure changes.
-    /// Returns true when caches should be purged immediately.
     @discardableResult
     public func handleMemoryPressure(_ level: MemoryPressureLevel) -> Bool {
         switch level {
         case .normal:
             return false
         case .warning:
+            NotificationCenter.default.post(
+                name: .meloNextPurgeTransientCaches,
+                object: nil
+            )
             return true
         case .critical:
+            NotificationCenter.default.post(
+                name: .meloNextPurgeAllCaches,
+                object: nil
+            )
             return true
         }
     }
 
     @objc private func handleMemoryWarning() {
-        // Individual cache systems should observe this manager and purge their
-        // transient allocations. We deliberately do not force an unsafe global
-        // allocation/deallocation cycle here.
+        availableMemoryBytes = 0
+        _ = handleMemoryPressure(.critical)
         NotificationCenter.default.post(
             name: .meloNextMemoryPressure,
             object: MemoryPressureLevel.critical
@@ -108,4 +144,6 @@ public final class MeloNextMemoryManager {
 
 public extension Notification.Name {
     static let meloNextMemoryPressure = Notification.Name("MeloNextMemoryPressure")
+    static let meloNextPurgeTransientCaches = Notification.Name("MeloNextPurgeTransientCaches")
+    static let meloNextPurgeAllCaches = Notification.Name("MeloNextPurgeAllCaches")
 }
