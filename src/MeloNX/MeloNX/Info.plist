@@ -12,6 +12,7 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>melonx</string>
+				<string>com.superkingmario.melonext</string>
 			</array>
 		</dict>
 		<dict>
