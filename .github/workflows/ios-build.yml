@@ -65,7 +65,13 @@ jobs:
           project="src/Ryujinx.Headless.SDL2/Ryujinx.Headless.SDL2.csproj"
           output="src/MeloNX/MeloNX/Dependencies/Dynamic Libraries/Ryujinx.Headless.SDL2.dylib"
 
-          dotnet publish "$project"             --configuration Release             --runtime ios-arm64             --self-contained true             -p:NativeLib=Shared             -p:PublishAot=true
+          dotnet publish "$project" \
+            --framework net8.0-ios \
+            --configuration Release \
+            --runtime ios-arm64 \
+            --self-contained true \
+            -p:NativeLib=Shared \
+            -p:PublishAot=true
 
           native=$(find "src/Ryujinx.Headless.SDL2/bin" -type f             \( -name 'Ryujinx.Headless.SDL2.dylib' -o -name 'Ryujinx.Headless.SDL2' \)             -print -quit)
 
