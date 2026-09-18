@@ -15,7 +15,16 @@ public final class NextendoClient: NSObject, ObservableObject, ASWebAuthenticati
     public static let shared = NextendoClient()
 
     public static let defaultServerURL = URL(string: "https://nextendo.network")!
-    public static let emulatorClientID = "nextendo-emulator"
+    /// Register a public PKCE application in the Nextendo developer portal and put
+    /// its client ID in Info.plist under NextendoOAuthClientID.
+    public static var oauthClientID: String {
+        (Bundle.main.object(forInfoDictionaryKey: "NextendoOAuthClientID") as? String)
+            ?? "REPLACE_WITH_YOUR_NEXTENDO_CLIENT_ID"
+    }
+
+    /// iOS uses a private-use callback so ASWebAuthenticationSession can return
+    /// directly to MeloNext. Register this exact URI for the public client.
+    public static let oauthRedirectURI = "com.superkingmario.melonext://oauth"
     public static let oauthScopes = ["identity", "friends"]
 
     @Published public private(set) var session: NextendoSession?
@@ -98,7 +107,7 @@ public final class NextendoClient: NSObject, ObservableObject, ASWebAuthenticati
         )!
 
         components.queryItems = [
-            URLQueryItem(name: "client_id", value: Self.emulatorClientID),
+            URLQueryItem(name: "client_id", value: Self.oauthClientID),
             URLQueryItem(name: "redirect_uri", value: redirectURI),
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "scope", value: Self.oauthScopes.joined(separator: " ")),
@@ -113,7 +122,7 @@ public final class NextendoClient: NSObject, ObservableObject, ASWebAuthenticati
 
         let callbackURL = try await authenticate(
             authorizeURL: authorizeURL,
-            callbackScheme: "http"
+            callbackScheme: "com.superkingmario.melonext"
         )
 
         let queryItems = URLComponents(
@@ -354,7 +363,7 @@ public final class NextendoClient: NSObject, ObservableObject, ASWebAuthenticati
         var form = URLComponents()
         form.queryItems = [
             URLQueryItem(name: "grant_type", value: "authorization_code"),
-            URLQueryItem(name: "client_id", value: Self.emulatorClientID),
+            URLQueryItem(name: "client_id", value: Self.oauthClientID),
             URLQueryItem(name: "code", value: code),
             URLQueryItem(name: "redirect_uri", value: redirectURI),
             URLQueryItem(name: "code_verifier", value: verifier)
@@ -472,10 +481,6 @@ public final class NextendoClient: NSObject, ObservableObject, ASWebAuthenticati
     private static func codeChallenge(_ verifier: String) -> String {
         let digest = SHA256.hash(data: Data(verifier.utf8))
         return Data(digest).base64URLEncodedString()
-    }
-
-    private static func randomLoopbackPort() -> Int {
-        Int.random(in: 49152...65535)
     }
 
     private func postSessionChanged() {
