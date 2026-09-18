@@ -8,7 +8,7 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>com.vertexselection.MeloVertex</string>
+			<string>com.superkingmario.melonext</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>melonx</string>
@@ -105,5 +105,7 @@
 			</dict>
 		</dict>
 	</array>
+	<key>NextendoOAuthClientID</key>
+	<string>REPLACE_WITH_YOUR_NEXTENDO_CLIENT_ID</string>
 </dict>
 </plist>
