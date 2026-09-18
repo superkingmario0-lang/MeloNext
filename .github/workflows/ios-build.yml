@@ -75,6 +75,13 @@ jobs:
             -p:RuntimeIdentifier= \
             -p:RuntimeIdentifiers=
 
+          # Restore the exact TFM/RID combination used by the NativeAOT publish.
+          # Without this, project.assets.json only contains net8.0 and publish
+          # fails with NETSDK1047 for net8.0/ios-arm64.
+          dotnet restore "$project" \
+            --framework net8.0 \
+            --runtime ios-arm64
+
           dotnet publish "$project" \
             --framework net8.0 \
             --configuration Release \
