@@ -65,13 +65,27 @@ jobs:
           project="src/Ryujinx.Headless.SDL2/Ryujinx.Headless.SDL2.csproj"
           output="src/MeloNX/MeloNX/Dependencies/Dynamic Libraries/Ryujinx.Headless.SDL2.dylib"
 
+          # Build the Ryujinx bridge as a .NET 8 NativeAOT iOS library.
+          # NativeAOT library mode uses TFM net8.0 + RID ios-arm64; using
+          # net8.0-ios here incorrectly propagates PublishAot into the
+          # net8.0 ProjectReferences.
+          dotnet build "$project" \
+            --configuration Release \
+            -p:PublishAot=false \
+            -p:RuntimeIdentifier= \
+            -p:RuntimeIdentifiers=
+
           dotnet publish "$project" \
-            --framework net8.0-ios \
+            --framework net8.0 \
             --configuration Release \
             --runtime ios-arm64 \
             --self-contained true \
+            --no-restore \
             -p:NativeLib=Shared \
-            -p:PublishAot=true
+            -p:PublishAot=true \
+            -p:PublishAotUsingRuntimePack=true \
+            -p:_IsAppleMobileLibraryMode=false \
+            -p:BuildProjectReferences=false
 
           native=$(find "src/Ryujinx.Headless.SDL2/bin" -type f             \( -name 'Ryujinx.Headless.SDL2.dylib' -o -name 'Ryujinx.Headless.SDL2' \)             -print -quit)
 
