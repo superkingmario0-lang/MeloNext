@@ -83,8 +83,12 @@ jobs:
           dotnet restore "$project" \
             --runtime ios-arm64 \
             -p:TargetFramework=net8.0 \
+            -p:RuntimeIdentifier=ios-arm64 \
+            -p:RuntimeIdentifiers=ios-arm64 \
+            -p:SelfContained=true \
             -p:PublishAot=true \
-            -p:PublishAotUsingRuntimePack=true
+            -p:PublishAotUsingRuntimePack=true \
+            --force-evaluate
 
       - name: Publish Ryujinx native iOS bridge
         shell: bash
