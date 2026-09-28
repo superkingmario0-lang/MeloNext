@@ -12,7 +12,6 @@
     <PublishAot>true</PublishAot>
     <PublishAotUsingRuntimePack>true</PublishAotUsingRuntimePack>
     <AotCompilerOptions>-flto -Ofast -funroll-loops</AotCompilerOptions>
-    <UseNativeAOTRuntime>true</UseNativeAOTRuntime>
     <TrimmerSingleWarn>false</TrimmerSingleWarn>
     <OptimizationPreference>Speed</OptimizationPreference>
   </PropertyGroup>
