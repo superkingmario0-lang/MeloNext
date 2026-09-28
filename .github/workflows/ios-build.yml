@@ -51,17 +51,16 @@ jobs:
           fi
           file "src/MeloNX/MeloNX/Dependencies/Dynamic Libraries/"*.dylib || true
 
-      - name: Set up .NET 8
+      - name: Set up .NET 9
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '9.0.x'
 
-      - name: Install .NET iOS workload
+      - name: Show .NET 9
         shell: bash
         run: |
           set -euo pipefail
           dotnet --info
-          dotnet workload install ios --skip-manifest-update
 
       - name: Build managed Ryujinx dependencies without AOT
         shell: bash
@@ -82,7 +81,7 @@ jobs:
           project="src/Ryujinx.Headless.SDL2/Ryujinx.Headless.SDL2.csproj"
           dotnet restore "$project" \
             --runtime ios-arm64 \
-            -p:TargetFramework=net8.0 \
+            -p:TargetFramework=net9.0 \
             -p:RuntimeIdentifier=ios-arm64 \
             -p:RuntimeIdentifiers=ios-arm64 \
             -p:SelfContained=true \
@@ -98,7 +97,7 @@ jobs:
           output="src/MeloNX/MeloNX/Dependencies/Dynamic Libraries/Ryujinx.Headless.SDL2.dylib"
 
           dotnet publish "$project" \
-            --framework net8.0 \
+            --framework net9.0 \
             --configuration Release \
             --runtime ios-arm64 \
             --self-contained true \
@@ -109,12 +108,12 @@ jobs:
             -p:_IsAppleMobileLibraryMode=false \
             -p:BuildProjectReferences=false
 
-          native=$(find "src/Ryujinx.Headless.SDL2/bin/Release/net8.0/ios-arm64" \
+          native=$(find "src/Ryujinx.Headless.SDL2/bin/Release/net9.0/ios-arm64" \
             -type f -name 'Ryujinx.Headless.SDL2.dylib' -print -quit)
 
           if [[ -z "$native" ]]; then
             echo "ERROR: Native Ryujinx.Headless.SDL2.dylib was not produced." >&2
-            find "src/Ryujinx.Headless.SDL2/bin/Release/net8.0/ios-arm64" \
+            find "src/Ryujinx.Headless.SDL2/bin/Release/net9.0/ios-arm64" \
               -maxdepth 6 -type f -print | head -n 250 || true
             exit 1
           fi
