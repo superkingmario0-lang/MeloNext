@@ -86,6 +86,7 @@
 
   <ItemGroup>
     <PackageReference Include="OpenTK.Core" />
+    <PackageReference Include="Microsoft.NETCore.App.Runtime.NativeAOT.ios-arm64" />
     <!-- <PackageReference Include="Ryujinx.Graphics.Nvdec.Dependencies" /> -->
   </ItemGroup>
 
