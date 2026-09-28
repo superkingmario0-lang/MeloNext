@@ -90,6 +90,23 @@ jobs:
             -p:PublishAotUsingRuntimePack=true \
             --force-evaluate
 
+      - name: Seed iOS NativeAOT runtime pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=9.0.16
+          package_id=microsoft.netcore.app.runtimenativeaot.ios-arm64
+          package_dir="$HOME/.nuget/packages/$package_id/$version"
+          package_url="https://api.nuget.org/v3-flatcontainer/$package_id/$version/$package_id.$version.nupkg"
+          mkdir -p "$package_dir"
+          if [[ ! -f "$package_dir/$package_id.$version.nupkg" ]]; then
+            curl --fail --retry 5 --retry-delay 2 -L "$package_url" -o "$package_dir/$package_id.$version.nupkg"
+          fi
+          unzip -q -o "$package_dir/$package_id.$version.nupkg" -d "$package_dir"
+          test -f "$package_dir/.nupkg.metadata"
+          echo "Seeded $package_id $version into $package_dir"
+          find "$package_dir" -maxdepth 2 -type f | head -n 30
+
       - name: Publish Ryujinx native iOS bridge
         shell: bash
         run: |
