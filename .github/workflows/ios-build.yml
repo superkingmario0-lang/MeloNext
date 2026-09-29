@@ -95,7 +95,7 @@ jobs:
         run: |
           set -euo pipefail
           version=9.0.16
-          package_id=microsoft.netcore.app.runtimenativeaot.ios-arm64
+          package_id=microsoft.netcore.app.runtime.nativeaot.ios-arm64
           package_dir="$HOME/.nuget/packages/$package_id/$version"
           package_url="https://api.nuget.org/v3-flatcontainer/$package_id/$version/$package_id.$version.nupkg"
           mkdir -p "$package_dir"
