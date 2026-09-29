@@ -103,7 +103,7 @@ jobs:
             curl --fail --retry 5 --retry-delay 2 -L "$package_url" -o "$package_dir/$package_id.$version.nupkg"
           fi
           unzip -q -o "$package_dir/$package_id.$version.nupkg" -d "$package_dir"
-          test -f "$package_dir/.nupkg.metadata"
+          test -f "$package_dir/$package_id.nuspec"
           echo "Seeded $package_id $version into $package_dir"
           find "$package_dir" -maxdepth 2 -type f | head -n 30
 
