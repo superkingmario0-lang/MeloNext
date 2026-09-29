@@ -145,4 +145,8 @@
     <PublishTrimmed>true</PublishTrimmed>
     <TrimMode>full</TrimMode>
   </PropertyGroup>
+  <ItemGroup Condition="'$(RuntimeIdentifier)' == 'ios-arm64'">
+    <PackageDownload Include="Microsoft.NETCore.App.Runtime.NativeAOT.ios-arm64" Version="[9.0.16]" />
+  </ItemGroup>
+
 </Project>
