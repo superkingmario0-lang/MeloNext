@@ -81,6 +81,8 @@ jobs:
           project="src/Ryujinx.Headless.SDL2/Ryujinx.Headless.SDL2.csproj"
           dotnet restore "$project" \
             --runtime ios-arm64 \
+            --no-dependencies \
+            -p:TargetFramework=net9.0 \
             -p:RuntimeIdentifier=ios-arm64 \
             -p:RuntimeIdentifiers=ios-arm64 \
             -p:SelfContained=true \
