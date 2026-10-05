@@ -295,6 +295,9 @@ struct EmulationView: View {
     
     func stop() {
         gameHandler.showApp = true
+        Task {
+            await NextendoClient.shared.clearGamePresence()
+        }
         Timer.scheduledTimer(withTimeInterval: 0.2, repeats: false) { _ in
             gameHandler.currentGame = nil
             RyujinxBridge.stopEmulation()

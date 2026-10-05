@@ -1,5 +1,6 @@
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
+using Ryujinx.Common.Configuration;
 using Ryujinx.Common.Logging;
 using Ryujinx.HLE.HOS.Kernel.Threading;
 using Ryujinx.HLE.HOS.Services.Account.Acc.AsyncContext;
@@ -15,8 +16,14 @@ namespace Ryujinx.HLE.HOS.Services.Account.Acc.AccountService
 {
     class ManagerServer
     {
-        // TODO: Determine where and how NetworkServiceAccountId is set.
-        private const long NetworkServiceAccountId = 0xcafe;
+        private long NetworkServiceAccountId
+        {
+            get
+            {
+                ulong pid = NextendoIdentityState.PidFor(_userId.ToString());
+                return pid == 0 ? 0xcafe : unchecked((long)pid);
+            }
+        }
 
 #pragma warning disable IDE0052 // Remove unread private member
         private readonly UserId _userId;
@@ -24,13 +31,15 @@ namespace Ryujinx.HLE.HOS.Services.Account.Acc.AccountService
 
         private byte[] _cachedTokenData;
         private DateTime _cachedTokenExpiry;
+        private ulong _cachedNextendoPid;
+        private string _cachedNextendoToken = "";
 
         public ManagerServer(UserId userId)
         {
             _userId = userId;
         }
 
-        private static string GenerateIdToken()
+        private string GenerateIdToken(string nexToken)
         {
             using RSA provider = RSA.Create(2048);
 
@@ -51,6 +60,19 @@ namespace Ryujinx.HLE.HOS.Services.Account.Acc.AccountService
             byte[] deviceAccountId = new byte[0x10];
             RandomNumberGenerator.Fill(deviceId);
 
+            Dictionary<string, object> claims = new()
+            {
+                { "jku", "https://e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com/1.0.0/certificates" },
+                { "di", Convert.ToHexString(deviceId).ToLower() },
+                { "sn", "XAW10000000000" },
+                { "bs:did", Convert.ToHexString(deviceAccountId).ToLower() }
+            };
+
+            if (!string.IsNullOrEmpty(nexToken))
+            {
+                claims["nnex"] = nexToken;
+            }
+
             var descriptor = new SecurityTokenDescriptor
             {
                 Subject = new GenericIdentity(Convert.ToHexString(rawUserId).ToLower()),
@@ -60,13 +82,7 @@ namespace Ryujinx.HLE.HOS.Services.Account.Acc.AccountService
                 TokenType = "id_token",
                 IssuedAt = DateTime.UtcNow,
                 Expires = DateTime.UtcNow + TimeSpan.FromHours(3),
-                Claims = new Dictionary<string, object>
-                {
-                    { "jku", "https://e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com/1.0.0/certificates" },
-                    { "di", Convert.ToHexString(deviceId).ToLower() },
-                    { "sn", "XAW10000000000" },
-                    { "bs:did", Convert.ToHexString(deviceAccountId).ToLower() }
-                }
+                Claims = claims
             };
 
             return new JsonWebTokenHandler().CreateToken(descriptor);
@@ -147,10 +163,19 @@ namespace Ryujinx.HLE.HOS.Services.Account.Acc.AccountService
             }
             */
 
-            if (_cachedTokenData == null || DateTime.UtcNow > _cachedTokenExpiry)
+            string profileUserId = _userId.ToString();
+            ulong nextendoPid = NextendoIdentityState.PidFor(profileUserId);
+            string nextendoToken = NextendoIdentityState.NexTokenFor(profileUserId);
+
+            if (_cachedTokenData == null
+                || DateTime.UtcNow > _cachedTokenExpiry
+                || _cachedNextendoPid != nextendoPid
+                || !string.Equals(_cachedNextendoToken, nextendoToken, StringComparison.Ordinal))
             {
                 _cachedTokenExpiry = DateTime.UtcNow + TimeSpan.FromHours(3);
-                _cachedTokenData = Encoding.ASCII.GetBytes(GenerateIdToken());
+                _cachedNextendoPid = nextendoPid;
+                _cachedNextendoToken = nextendoToken;
+                _cachedTokenData = Encoding.ASCII.GetBytes(GenerateIdToken(nextendoToken));
             }
 
             byte[] tokenData = _cachedTokenData;

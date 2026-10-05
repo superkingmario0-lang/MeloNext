@@ -10,6 +10,7 @@ import SwiftUI
 
 struct GameCardView: View {
     @EnvironmentObject var gameHandler: LaunchGameHandler
+    @ObservedObject private var nextendo = NextendoClient.shared
     @StateObject private var settingsManager = PerGameSettingsManager.shared
     @StateObject var nativeSettings = NativeSettingsManager.shared
     let game: Game
@@ -89,6 +90,12 @@ struct GameCardView: View {
                 wiiUCard
             } else {
                 normalGrid
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if let count = nextendo.population(for: game.titleId) {
+                NextendoPopulationBadge(count: count)
+                    .padding(8)
             }
         }
     }

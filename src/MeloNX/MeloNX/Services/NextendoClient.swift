@@ -21,6 +21,10 @@ public final class NextendoClient: NSObject, ObservableObject, ASWebAuthenticati
         (Bundle.main.object(forInfoDictionaryKey: "NextendoOAuthClientID") as? String)
             ?? "REPLACE_WITH_YOUR_NEXTENDO_CLIENT_ID"
     }
+    public static var hasConfiguredOAuthClient: Bool {
+        let clientID = oauthClientID.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !clientID.isEmpty && !clientID.contains("REPLACE_WITH_")
+    }
 
     /// iOS uses a private-use callback so ASWebAuthenticationSession can return
     /// directly to MeloNext. Register this exact URI for the public client.
@@ -29,6 +33,7 @@ public final class NextendoClient: NSObject, ObservableObject, ASWebAuthenticati
 
     @Published public private(set) var session: NextendoSession?
     @Published public private(set) var friends: [NextendoFriend] = []
+    @Published public private(set) var onlineCounts: [String: Int] = [:]
     @Published public private(set) var presence = NextendoPresence(status: 0)
     @Published public private(set) var isConnected = false
     @Published public private(set) var isAuthenticating = false
@@ -39,6 +44,7 @@ public final class NextendoClient: NSObject, ObservableObject, ASWebAuthenticati
     private let keychain: NextendoKeychain
     private var authSession: ASWebAuthenticationSession?
     private var heartbeatTimer: Timer?
+    private var onlineCountsTask: Task<Void, Never>?
     private var lastPresence = NextendoPresence(status: 0)
 
     public init(
@@ -70,6 +76,7 @@ public final class NextendoClient: NSObject, ObservableObject, ASWebAuthenticati
                 let account = try await fetchAccount(token: token)
                 session = NextendoSession(nexToken: token, user: account)
                 isConnected = true
+                updateNativeIdentityForActiveProfile()
                 postSessionChanged()
                 try await refreshFriends()
                 startHeartbeat()
@@ -78,6 +85,7 @@ public final class NextendoClient: NSObject, ObservableObject, ASWebAuthenticati
                 session = nil
                 friends = []
                 isConnected = false
+                RyujinxBridge.setNextendoIdentity(pid: 0, nexToken: "", profileUserId: "")
             }
         }
     }
@@ -95,6 +103,7 @@ public final class NextendoClient: NSObject, ObservableObject, ASWebAuthenticati
 
         let verifier = Self.randomURLSafeString(byteCount: 32)
         let challenge = Self.codeChallenge(verifier)
+        let state = Self.randomURLSafeString(byteCount: 16)
 
         // iOS uses a private-use callback registered to this app. The public
         // client must have this exact redirect URI registered in Nextendo.
@@ -113,7 +122,7 @@ public final class NextendoClient: NSObject, ObservableObject, ASWebAuthenticati
             URLQueryItem(name: "scope", value: Self.oauthScopes.joined(separator: " ")),
             URLQueryItem(name: "code_challenge", value: challenge),
             URLQueryItem(name: "code_challenge_method", value: "S256"),
-            URLQueryItem(name: "state", value: Self.randomURLSafeString(byteCount: 16))
+            URLQueryItem(name: "state", value: state)
         ]
 
         guard let authorizeURL = components.url else {
@@ -129,6 +138,10 @@ public final class NextendoClient: NSObject, ObservableObject, ASWebAuthenticati
             url: callbackURL,
             resolvingAgainstBaseURL: false
         )?.queryItems ?? []
+
+        guard queryItems.first(where: { $0.name == "state" })?.value == state else {
+            throw NextendoAPIError(message: "Nextendo authorization state did not match.")
+        }
 
         if let error = queryItems.first(where: { $0.name == "error" })?.value {
             throw NextendoAPIError(message: "Nextendo authorization failed: \(error)")
@@ -148,6 +161,7 @@ public final class NextendoClient: NSObject, ObservableObject, ASWebAuthenticati
 
         session = NextendoSession(nexToken: token.nexToken, user: token.user)
         isConnected = true
+        updateNativeIdentityForActiveProfile()
         postSessionChanged()
 
         try await refreshFriends()
@@ -169,7 +183,27 @@ public final class NextendoClient: NSObject, ObservableObject, ASWebAuthenticati
         lastPresence = NextendoPresence(status: 0)
         presence = lastPresence
         isConnected = false
+        RyujinxBridge.setNextendoIdentity(pid: 0, nexToken: "", profileUserId: "")
         postSessionChanged()
+    }
+
+    public func updateNativeIdentityForActiveProfile() {
+        guard let session, let pid = session.user.pid else {
+            RyujinxBridge.setNextendoIdentity(pid: 0, nexToken: "", profileUserId: "")
+            return
+        }
+
+        let profileURL = URL.documentsDirectory
+            .appendingPathComponent("system")
+            .appendingPathComponent("Profiles.json")
+        let profileUserId = (try? Data(contentsOf: profileURL))
+            .flatMap { try? JSONDecoder().decode(Profiles.self, from: $0).last_opened } ?? ""
+
+        RyujinxBridge.setNextendoIdentity(
+            pid: pid,
+            nexToken: session.nexToken,
+            profileUserId: profileUserId
+        )
     }
 
     public func refreshFriends() async throws {
@@ -186,6 +220,48 @@ public final class NextendoClient: NSObject, ObservableObject, ASWebAuthenticati
         )
 
         friends = response.friends
+    }
+
+    public func refreshOnlineCounts() async throws {
+        struct OnlineCountsResponse: Decodable {
+            let counts: [String: Int]
+        }
+
+        let response: OnlineCountsResponse = try await request(
+            path: "/api/online-counts",
+            method: "GET"
+        )
+
+        onlineCounts = Dictionary(
+            response.counts.map { ($0.key.lowercased(), $0.value) },
+            uniquingKeysWith: { _, latest in latest }
+        )
+    }
+
+    public func population(for titleID: String) -> Int? {
+        let normalized = titleID.lowercased()
+        if let count = onlineCounts[normalized] {
+            return count
+        }
+
+        guard let numericID = UInt64(normalized, radix: 16) else {
+            return nil
+        }
+
+        let baseID = String(numericID & ~UInt64(0x1fff), radix: 16)
+        let canonicalID = String(repeating: "0", count: max(0, 16 - baseID.count)) + baseID
+        return onlineCounts[canonicalID]
+    }
+
+    public func startOnlineCountsPolling() {
+        guard onlineCountsTask == nil, Self.hasConfiguredOAuthClient else { return }
+
+        onlineCountsTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await self?.refreshOnlineCounts()
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+            }
+        }
     }
 
     /// Current Nextendo presence payload:
@@ -359,6 +435,7 @@ public final class NextendoClient: NSObject, ObservableObject, ASWebAuthenticati
             forHTTPHeaderField: "Content-Type"
         )
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(Self.oauthClientID, forHTTPHeaderField: "X-Nextendo-Client-Id")
 
         var form = URLComponents()
         form.queryItems = [
@@ -427,6 +504,7 @@ public final class NextendoClient: NSObject, ObservableObject, ASWebAuthenticati
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(Self.oauthClientID, forHTTPHeaderField: "X-Nextendo-Client-Id")
 
         if body != nil {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")

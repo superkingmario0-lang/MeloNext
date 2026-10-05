@@ -83,6 +83,12 @@ extension GamesListView {
             } label: {
                 Label("Profile Manager", systemImage: "person.2")
             }
+
+            Button {
+                self.activeSheet = .nextendo
+            } label: {
+                Label("Nextendo Network", systemImage: "person.2.wave.2")
+            }
             
         } label: {
             Label("Options", systemImage: "ellipsis.circle")

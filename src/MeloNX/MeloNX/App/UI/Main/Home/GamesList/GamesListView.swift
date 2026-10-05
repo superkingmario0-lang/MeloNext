@@ -18,6 +18,7 @@ enum ActiveSheet: Identifiable, Equatable{
     case update(game: Game)
     case mods(game: Game)
     case account
+    case nextendo
 
     var id: String {
         switch self {
@@ -30,6 +31,8 @@ enum ActiveSheet: Identifiable, Equatable{
             return "\(type(of: self))-\(game.id)"
         case .account:
             return "account"
+        case .nextendo:
+            return "nextendo"
         }
     }
 }
@@ -192,6 +195,8 @@ struct GamesListView: View {
                     ModsManagerSheet(game: game)
                 case .account:
                     AccountManagerView()
+                case .nextendo:
+                    NextendoCommunityView()
                 }
             }
         }

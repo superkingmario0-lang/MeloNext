@@ -242,6 +242,14 @@ namespace Ryujinx.Headless.SDL2
         {
             _accountManager.Refresh();
         }
+
+        [UnmanagedCallersOnly(EntryPoint = "set_nextendo_identity")]
+        public static void SetNextendoIdentity(ulong pid, IntPtr tokenPtr, IntPtr profileUserIdPtr)
+        {
+            string token = Marshal.PtrToStringUTF8(tokenPtr) ?? "";
+            string profileUserId = Marshal.PtrToStringUTF8(profileUserIdPtr) ?? "";
+            NextendoIdentityState.Set(pid, token, profileUserId);
+        }
         
         [UnmanagedCallersOnly(EntryPoint = "get_dlc_nca_list")]
         public static unsafe DlcNcaList GetDlcNcaList(IntPtr titleIdPtr, IntPtr pathPtr) 

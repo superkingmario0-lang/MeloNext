@@ -9,6 +9,7 @@ import SwiftUI
 
 struct GameRowView: View {
     let game: Game
+    @ObservedObject private var nextendo = NextendoClient.shared
     @Binding var selectedGame: Game?
     @Binding var games: [Game]
     @EnvironmentObject var gameHandler: LaunchGameHandler
@@ -83,6 +84,10 @@ struct GameRowView: View {
                 VStack(alignment: .leading) {
                     // Compatibility badges
                     HStack {
+                        if let count = nextendo.population(for: game.titleId) {
+                            NextendoPopulationBadge(count: count)
+                        }
+
                         if let gameReq = gameRequirements.first(where: { $0.game_id == game.titleId }) {
                             let totalMemory = ProcessInfo.processInfo.physicalMemory
                             

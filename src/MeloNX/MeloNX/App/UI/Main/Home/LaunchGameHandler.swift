@@ -85,6 +85,7 @@ class LaunchGameHandler: ObservableObject {
         }
     }
     
+    @MainActor
     func startGame() {
         enableJIT()
         MusicSelectorView.stopMusic()
@@ -107,10 +108,17 @@ class LaunchGameHandler: ObservableObject {
         
         print(config.inputids)
         configureEnvironmentVariables()
+        NextendoClient.shared.updateNativeIdentityForActiveProfile()
         
         do {
             try ryujinx.start(with: config)
+            Task {
+                try? await NextendoClient.shared.setGamePresence(appID: currentGame.titleId)
+            }
         } catch {
+            Task {
+                await NextendoClient.shared.clearGamePresence()
+            }
             print("Failed to start game '\(currentGame.titleId)': \(error)")
         }
     }

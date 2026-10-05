@@ -14,6 +14,7 @@
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_syswm.h>
+#include <stdint.h>
 #include "MobileGestalt.h"
 #include "HookNSBundle.h"
 
@@ -63,6 +64,7 @@ typedef void (^SwiftCallback2)(NSData *result);
 
 void RegisterCallback(NSString *identifier, SwiftCallback callback);
 void RegisterCallbackWithData(NSString *identifier, SwiftCallback2 callback);
+void set_nextendo_identity(uint64_t pid, const char *token, const char *profileUserId);
 
 __attribute__((noinline,optnone,naked))
 void BreakSendJITScript(char* script, size_t len) {

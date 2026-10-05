@@ -8,6 +8,14 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+private enum GameIconCache {
+    static let images: NSCache<NSURL, UIImage> = {
+        let cache = NSCache<NSURL, UIImage>()
+        cache.totalCostLimit = 32 * 1024 * 1024
+        return cache
+    }()
+}
+
 public struct Game: Codable, Identifiable, Equatable, Hashable, Sendable {
     public var id: URL { fileURL }
 
@@ -21,7 +29,18 @@ public struct Game: Codable, Identifiable, Equatable, Hashable, Sendable {
     var version: String
     var iconData: Data?
     var icon: UIImage? {
-        UIImage(data: iconData ?? Data())
+        let cacheKey = fileURL as NSURL
+        if let cachedImage = GameIconCache.images.object(forKey: cacheKey) {
+            return cachedImage
+        }
+
+        guard let iconData, let image = UIImage(data: iconData) else {
+            return nil
+        }
+
+        let cost = image.cgImage.map { $0.bytesPerRow * $0.height } ?? iconData.count
+        GameIconCache.images.setObject(image, forKey: cacheKey, cost: cost)
+        return image
     }
     
     

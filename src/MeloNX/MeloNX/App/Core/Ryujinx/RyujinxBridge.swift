@@ -107,6 +107,14 @@ final class RyujinxBridge {
         SN_refresh_account_manager()
     }
 
+    static func setNextendoIdentity(pid: UInt64, nexToken: String, profileUserId: String) {
+        nexToken.withCString { tokenPtr in
+            profileUserId.withCString { profilePtr in
+                SN_set_nextendo_identity(pid, tokenPtr, profilePtr)
+            }
+        }
+    }
+
     static func createAccount(name: String, image: Data) {
         name.withCString { namePtr in
             image.withUnsafeBytes { bufferpointer in
@@ -224,6 +232,9 @@ func SN_touch_ended(_ index: Int32)
 
 @_silgen_name("refresh_account_manager")
 func SN_refresh_account_manager()
+
+@_silgen_name("set_nextendo_identity")
+func SN_set_nextendo_identity(_ pid: UInt64, _ token: UnsafePointer<CChar>!, _ profileUserId: UnsafePointer<CChar>!)
 
 @_silgen_name("create_account")
 func SN_create_account(_ name: UnsafePointer<CChar>!, _ image: UnsafePointer<UInt8>!, _ imagelength: Int32)
