@@ -27,6 +27,10 @@ jobs:
         with:
           xcode-version: '16.2'
 
+      - name: Install iOS 18.2 platform
+        shell: bash
+        run: xcodebuild -downloadPlatform iOS --buildVersion 18.2
+
       - name: Show toolchain
         shell: bash
         run: |
