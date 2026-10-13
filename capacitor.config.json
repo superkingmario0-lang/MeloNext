@@ -1,0 +1,6 @@
+{
+  "appId": "com.superkingmario0_lang.melonext",
+  "appName": "MeloNext",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}
