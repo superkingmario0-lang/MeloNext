@@ -1,0 +1,120 @@
+name: Generate lockfile
+
+on:
+  workflow_dispatch:
+    inputs:
+      manager:
+        description: "Package manager hint (auto | npm | pnpm | yarn | bun)"
+        required: false
+        default: "auto"
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  lockfile:
+    name: Install and commit lockfile
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Detect app directory and package manager
+        shell: bash
+        run: |
+          set -e
+          APP_DIR="."
+          if [ ! -f package.json ]; then
+            found="$(find . -maxdepth 4 -name package.json -not -path '*/node_modules/*' \
+              -not -path './.github/*' | sed 's|/package.json$||' | sort | head -1)"
+            if [ -z "$found" ]; then
+              echo "No package.json found in this repo (searched 3 levels deep)." >&2
+              exit 1
+            fi
+            APP_DIR="$found"
+          fi
+          echo "APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
+
+          HINT="${{ inputs.manager }}"
+          if [ -n "$HINT" ] && [ "$HINT" != "auto" ]; then
+            PKG_MANAGER="$HINT"
+          elif [ -f "$APP_DIR/bun.lockb" ] || [ -f "$APP_DIR/bun.lock" ]; then
+            PKG_MANAGER=bun
+          elif [ -f "$APP_DIR/pnpm-lock.yaml" ]; then
+            PKG_MANAGER=pnpm
+          elif [ -f "$APP_DIR/yarn.lock" ]; then
+            PKG_MANAGER=yarn
+          else
+            PKG_MANAGER=npm
+          fi
+          echo "PKG_MANAGER=$PKG_MANAGER" >> "$GITHUB_ENV"
+          echo "Using $PKG_MANAGER in $APP_DIR"
+
+      # Same reason as the build workflows: the runner only ships Node/npm, and
+      # bun's install dir is dropped from the PATH of login shells.
+      - name: Install package manager
+        if: env.PKG_MANAGER != 'npm'
+        shell: bash
+        run: |
+          set -e
+          case "$PKG_MANAGER" in
+            bun)
+              curl -fsSL https://bun.sh/install | bash
+              echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+              export PATH="$HOME/.bun/bin:$PATH"
+              sudo ln -sf "$HOME/.bun/bin/bun" /usr/local/bin/bun || true
+              ;;
+            pnpm)
+              corepack enable || npm install -g pnpm
+              corepack prepare pnpm@latest --activate || true
+              ;;
+            yarn)
+              corepack enable || npm install -g yarn
+              corepack prepare yarn@stable --activate || true
+              ;;
+          esac
+          if ! command -v "$PKG_MANAGER" >/dev/null 2>&1; then
+            echo "::error::Could not install $PKG_MANAGER on the runner."
+            exit 1
+          fi
+
+      - name: Generate lockfile
+        working-directory: ${{ env.APP_DIR }}
+        shell: bash
+        run: |
+          set -e
+          case "$PKG_MANAGER" in
+            # --frozen-lockfile is a boolean flag; current bun rejects the
+            # =value form outright and prints its help. Bun also turns it on
+            # by itself when CI is set, so CI= is needed for the lockfile to
+            # be writable on a runner.
+            bun)  CI= bun install --lockfile-only --save-text-lockfile ;;
+            pnpm) pnpm install --lockfile-only ;;
+            yarn) yarn install --mode update-lockfile ;;
+            *)    npm install --package-lock-only --ignore-scripts ;;
+          esac
+
+      - name: Commit lockfile
+        shell: bash
+        run: |
+          set -e
+          git config user.name  "lovable-bot"
+          git config user.email "lovable-bot@users.noreply.github.com"
+          for f in package-lock.json pnpm-lock.yaml yarn.lock bun.lockb bun.lock; do
+            [ -f "$APP_DIR/$f" ] && git add "$APP_DIR/$f" || true
+          done
+          if git diff --cached --quiet; then
+            echo "No lockfile changes."
+            exit 0
+          fi
+          git commit -m "chore: regenerate lockfile [skip ci]"
+          git push
