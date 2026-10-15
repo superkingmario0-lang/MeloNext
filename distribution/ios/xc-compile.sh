@@ -1,3 +1,8 @@
+if [ "${MELONX_SKIP_NATIVE_BUILD:-0}" = "1" ]; then
+    echo "MELONX_SKIP_NATIVE_BUILD=1: using prebuilt Ryujinx.Headless.SDL2.dylib, skipping dotnet publish."
+    exit 0
+fi
+
 dotnet_output=$(./distribution/ios/get_dotnet.sh)
 exit_code=$?
 

@@ -153,6 +153,8 @@ jobs:
       - name: Build MeloNX Release for physical iOS devices
         id: build
         shell: bash
+        env:
+          MELONX_SKIP_NATIVE_BUILD: '1'
         run: |
           set -o pipefail
           set +e
